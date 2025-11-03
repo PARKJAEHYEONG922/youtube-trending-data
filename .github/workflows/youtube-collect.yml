@@ -49,6 +49,10 @@ jobs:
             COMMIT_DATE=$(TZ=Asia/Seoul date '+%Y-%m-%d %H:%M KST')
             git commit -m "📊 YouTube 데이터 수집: ${COMMIT_DATE}"
 
+            # 원격 변경사항 먼저 가져오기 (충돌 방지)
+            echo "🔄 원격 저장소 동기화 중..."
+            git pull --rebase origin main
+
             echo "⬆️ GitHub에 푸시 중..."
             git push
 
