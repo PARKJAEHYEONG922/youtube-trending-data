@@ -1,0 +1,54 @@
+name: YouTube 트렌딩 데이터 자동 수집
+
+on:
+  # 매일 한국시간 자정 (UTC 15:00 = KST 00:00 다음날)
+  schedule:
+    - cron: '0 15 * * *'
+
+  # 수동 실행 버튼 (테스트용)
+  workflow_dispatch:
+
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 📥 저장소 체크아웃
+        uses: actions/checkout@v3
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 🔧 Node.js 설정
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+
+      - name: 📊 YouTube 데이터 수집
+        env:
+          YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
+        run: |
+          echo "🚀 YouTube 트렌딩 데이터 수집 시작"
+          node scripts/collect-youtube-data.js
+
+      - name: 💾 Git 커밋 및 푸시
+        run: |
+          git config user.name "YouTube Data Collector"
+          git config user.email "bot@github.com"
+
+          # 변경사항 확인
+          if [ -n "$(git status --porcelain)" ]; then
+            echo "📝 변경사항 발견, 커밋 준비 중..."
+
+            git add data/
+
+            # 한국시간으로 커밋 메시지 생성
+            COMMIT_DATE=$(TZ=Asia/Seoul date '+%Y-%m-%d %H:%M KST')
+            git commit -m "📊 YouTube 데이터 수집: ${COMMIT_DATE}"
+
+            echo "⬆️ GitHub에 푸시 중..."
+            git push
+
+            echo "✅ 데이터 커밋 및 푸시 완료!"
+          else
+            echo "ℹ️ 변경사항 없음 (이미 최신 데이터)"
+          fi

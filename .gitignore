@@ -1,0 +1,15 @@
+# API 키 & 비밀 정보
+.env
+.env.local
+.env.*.local
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Node
+node_modules/
+npm-debug.log
+
+# Logs
+*.log
