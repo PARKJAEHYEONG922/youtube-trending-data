@@ -61,49 +61,73 @@ function fetchJSON(url) {
 }
 
 /**
- * 특정 카테고리의 인기 영상 수집
+ * 특정 카테고리의 인기 영상 수집 (페이지네이션)
  */
 async function collectCategory(categoryKey) {
   const category = CATEGORIES[categoryKey];
 
   console.log(`📂 ${category.emoji} ${category.name} 수집 중...`);
 
-  const url = `https://www.googleapis.com/youtube/v3/videos?` +
-    `part=snippet,statistics` +
-    `&chart=mostPopular` +
-    `&regionCode=KR` +
-    `&maxResults=200` +
-    (category.id ? `&videoCategoryId=${category.id}` : '') +
-    `&key=${API_KEY}`;
+  const allVideos = [];
+  let pageToken = null;
+  const maxResults = 200;
+  const perPage = 50; // YouTube API 최대값
 
   try {
-    const data = await fetchJSON(url);
+    // 200개를 채울 때까지 페이지네이션
+    while (allVideos.length < maxResults) {
+      let url = `https://www.googleapis.com/youtube/v3/videos?` +
+        `part=snippet,statistics` +
+        `&chart=mostPopular` +
+        `&regionCode=KR` +
+        `&maxResults=${perPage}` +
+        (category.id ? `&videoCategoryId=${category.id}` : '') +
+        `&key=${API_KEY}`;
 
-    if (!data.items) {
-      console.warn(`⚠️ ${category.name}: 데이터 없음`);
-      return [];
+      if (pageToken) {
+        url += `&pageToken=${pageToken}`;
+      }
+
+      const data = await fetchJSON(url);
+
+      if (!data.items || data.items.length === 0) {
+        break;
+      }
+
+      const videos = data.items.map(item => ({
+        videoId: item.id,
+        title: item.snippet.title,
+        channelName: item.snippet.channelTitle,
+        channelId: item.snippet.channelId,
+        thumbnailUrl: item.snippet.thumbnails.high?.url || item.snippet.thumbnails.default?.url,
+        viewCount: parseInt(item.statistics.viewCount || 0),
+        likeCount: parseInt(item.statistics.likeCount || 0),
+        commentCount: parseInt(item.statistics.commentCount || 0),
+        publishedAt: item.snippet.publishedAt,
+        categoryKey: categoryKey,
+        categoryName: category.name
+      }));
+
+      allVideos.push(...videos);
+
+      // 다음 페이지가 없거나 원하는 개수를 채웠으면 종료
+      if (!data.nextPageToken || allVideos.length >= maxResults) {
+        break;
+      }
+
+      pageToken = data.nextPageToken;
+
+      // API 호출 제한 방지 (페이지 간 딜레이)
+      await new Promise(resolve => setTimeout(resolve, 300));
     }
 
-    const videos = data.items.map(item => ({
-      videoId: item.id,
-      title: item.snippet.title,
-      channelName: item.snippet.channelTitle,
-      channelId: item.snippet.channelId,
-      thumbnailUrl: item.snippet.thumbnails.high?.url || item.snippet.thumbnails.default?.url,
-      viewCount: parseInt(item.statistics.viewCount || 0),
-      likeCount: parseInt(item.statistics.likeCount || 0),
-      commentCount: parseInt(item.statistics.commentCount || 0),
-      publishedAt: item.snippet.publishedAt,
-      categoryKey: categoryKey,
-      categoryName: category.name
-    }));
-
-    console.log(`  ✅ ${videos.length}개 영상 수집 완료`);
-    return videos;
+    const result = allVideos.slice(0, maxResults);
+    console.log(`  ✅ ${result.length}개 영상 수집 완료`);
+    return result;
 
   } catch (error) {
     console.error(`  ❌ ${category.name} 수집 실패:`, error.message);
-    return [];
+    return allVideos; // 에러나도 지금까지 수집한 것은 반환
   }
 }
 
