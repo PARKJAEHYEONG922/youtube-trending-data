@@ -8,6 +8,10 @@ on:
   # 수동 실행 버튼 (테스트용)
   workflow_dispatch:
 
+# GitHub Actions에 쓰기 권한 부여
+permissions:
+  contents: write
+
 jobs:
   collect:
     runs-on: ubuntu-latest
