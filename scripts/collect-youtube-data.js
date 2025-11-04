@@ -204,8 +204,14 @@ async function collectRegion(regionCode) {
   console.log('');
 
   // 모든 카테고리 수집
+  // 한국 시간(KST) 기준으로 날짜 계산
+  const now = new Date();
+  const kstOffset = 9 * 60 * 60 * 1000; // KST = UTC+9
+  const kstDate = new Date(now.getTime() + kstOffset);
+  const dateStr = kstDate.toISOString().split('T')[0];
+
   const result = {
-    date: new Date().toISOString().split('T')[0],
+    date: dateStr,
     timestamp: new Date().toISOString(),
     region: regionCode,
     categories: {}
