@@ -61,12 +61,12 @@ function fetchJSON(url) {
 }
 
 /**
- * 특정 카테고리의 인기 영상 수집 (페이지네이션)
+ * 특정 지역/카테고리의 인기 영상 수집 (페이지네이션)
  */
-async function collectCategory(categoryKey) {
+async function collectCategory(regionCode, categoryKey) {
   const category = CATEGORIES[categoryKey];
 
-  console.log(`📂 ${category.emoji} ${category.name} 수집 중...`);
+  console.log(`📂 [${regionCode}] ${category.emoji} ${category.name} 수집 중...`);
 
   const allVideos = [];
   let pageToken = null;
@@ -79,7 +79,7 @@ async function collectCategory(categoryKey) {
       let url = `https://www.googleapis.com/youtube/v3/videos?` +
         `part=snippet,statistics` +
         `&chart=mostPopular` +
-        `&regionCode=KR` +
+        `&regionCode=${regionCode}` +
         `&maxResults=${perPage}` +
         (category.id ? `&videoCategoryId=${category.id}` : '') +
         `&key=${API_KEY}`;
@@ -126,7 +126,7 @@ async function collectCategory(categoryKey) {
     return result;
 
   } catch (error) {
-    console.error(`  ❌ ${category.name} 수집 실패:`, error.message);
+    console.error(`  ❌ [${regionCode}] ${category.name} 수집 실패:`, error.message);
     return allVideos; // 에러나도 지금까지 수집한 것은 반환
   }
 }
@@ -134,19 +134,19 @@ async function collectCategory(categoryKey) {
 /**
  * 어제 데이터 읽기 (비교용)
  */
-function getYesterdayData() {
+function getYesterdayData(regionCode) {
   const yesterday = new Date();
   yesterday.setDate(yesterday.getDate() - 1);
   const dateStr = yesterday.toISOString().split('T')[0];
 
-  const filePath = path.join(DATA_DIR, `${dateStr}.json`);
+  const filePath = path.join(DATA_DIR, `${regionCode}-${dateStr}.json`);
 
   if (fs.existsSync(filePath)) {
-    console.log(`📖 어제 데이터 읽기: ${dateStr}`);
+    console.log(`📖 [${regionCode}] 어제 데이터 읽기: ${dateStr}`);
     return JSON.parse(fs.readFileSync(filePath, 'utf-8'));
   }
 
-  console.log('ℹ️ 어제 데이터 없음 (최초 실행)');
+  console.log(`ℹ️ [${regionCode}] 어제 데이터 없음 (최초 실행)`);
   return null;
 }
 
@@ -192,6 +192,55 @@ function calculateGrowth(todayVideos, yesterdayData) {
 }
 
 /**
+ * 특정 지역의 데이터 수집
+ */
+async function collectRegion(regionCode) {
+  console.log('');
+  console.log(`🌏 [${regionCode}] 지역 데이터 수집 시작`);
+  console.log('='.repeat(50));
+
+  // 어제 데이터 읽기
+  const yesterdayData = getYesterdayData(regionCode);
+  console.log('');
+
+  // 모든 카테고리 수집
+  const result = {
+    date: new Date().toISOString().split('T')[0],
+    timestamp: new Date().toISOString(),
+    region: regionCode,
+    categories: {}
+  };
+
+  for (const categoryKey of Object.keys(CATEGORIES)) {
+    const videos = await collectCategory(regionCode, categoryKey);
+
+    // 오늘 증가량 계산
+    const videosWithGrowth = calculateGrowth(videos, yesterdayData);
+
+    result.categories[categoryKey] = videosWithGrowth;
+
+    // API 호출 제한 방지 (약간의 딜레이)
+    await new Promise(resolve => setTimeout(resolve, 500));
+  }
+
+  console.log('');
+  console.log(`📊 [${regionCode}] 수집 결과:`);
+  Object.entries(result.categories).forEach(([key, videos]) => {
+    const category = CATEGORIES[key];
+    console.log(`  ${category.emoji} ${category.name}: ${videos.length}개`);
+  });
+
+  // 총 영상 수 (중복 제거)
+  const allVideoIds = new Set();
+  Object.values(result.categories).forEach(videos => {
+    videos.forEach(video => allVideoIds.add(video.videoId));
+  });
+  console.log(`  📈 총 고유 영상: ${allVideoIds.size}개`);
+
+  return result;
+}
+
+/**
  * 메인 수집 함수
  */
 async function main() {
@@ -205,53 +254,64 @@ async function main() {
     console.log(`📁 데이터 디렉토리 생성: ${DATA_DIR}`);
   }
 
-  // 어제 데이터 읽기
-  const yesterdayData = getYesterdayData();
-  console.log('');
+  // 수집할 지역
+  const REGIONS = ['KR', 'US', 'JP'];
 
-  // 모든 카테고리 수집
-  const result = {
-    date: new Date().toISOString().split('T')[0],
-    timestamp: new Date().toISOString(),
-    categories: {}
-  };
+  // 각 지역별 데이터 수집
+  for (const regionCode of REGIONS) {
+    const regionData = await collectRegion(regionCode);
 
-  for (const categoryKey of Object.keys(CATEGORIES)) {
-    const videos = await collectCategory(categoryKey);
+    // 지역별 JSON 파일로 저장
+    const dateStr = regionData.date;
+    const regionFile = path.join(DATA_DIR, `${regionCode}-${dateStr}.json`);
+    fs.writeFileSync(regionFile, JSON.stringify(regionData, null, 2));
+    console.log('');
+    console.log(`✅ [${regionCode}] 데이터 저장 완료: ${regionFile}`);
 
-    // 오늘 증가량 계산
-    const videosWithGrowth = calculateGrowth(videos, yesterdayData);
+    // latest-{REGION}.json도 업데이트
+    const latestFile = path.join(DATA_DIR, `${regionCode}-latest.json`);
+    fs.writeFileSync(latestFile, JSON.stringify(regionData, null, 2));
+    console.log(`✅ [${regionCode}] 최신 데이터 업데이트: ${latestFile}`);
 
-    result.categories[categoryKey] = videosWithGrowth;
-
-    // API 호출 제한 방지 (약간의 딜레이)
-    await new Promise(resolve => setTimeout(resolve, 500));
+    // 지역 간 딜레이 (API 할당량 보호)
+    if (regionCode !== REGIONS[REGIONS.length - 1]) {
+      console.log('');
+      console.log('⏳ 다음 지역까지 대기 중... (3초)');
+      await new Promise(resolve => setTimeout(resolve, 3000));
+    }
   }
 
+  // 30일 이전 파일 삭제
   console.log('');
-  console.log('📊 수집 결과:');
-  Object.entries(result.categories).forEach(([key, videos]) => {
-    const category = CATEGORIES[key];
-    console.log(`  ${category.emoji} ${category.name}: ${videos.length}개`);
+  console.log('🧹 30일 이전 데이터 정리 중...');
+  const thirtyDaysAgo = new Date();
+  thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
+  const files = fs.readdirSync(DATA_DIR);
+  let deletedCount = 0;
+
+  files.forEach(file => {
+    // latest 파일들은 제외
+    if (file.includes('latest')) return;
+
+    // {REGION}-YYYY-MM-DD.json 형식 파일만 처리
+    const match = file.match(/^[A-Z]{2}-(\d{4}-\d{2}-\d{2})\.json$/);
+    if (match) {
+      const fileDate = new Date(match[1]);
+      if (fileDate < thirtyDaysAgo) {
+        const filePath = path.join(DATA_DIR, file);
+        fs.unlinkSync(filePath);
+        console.log(`  🗑️ 삭제: ${file}`);
+        deletedCount++;
+      }
+    }
   });
 
-  // 총 영상 수 (중복 제거)
-  const allVideoIds = new Set();
-  Object.values(result.categories).forEach(videos => {
-    videos.forEach(video => allVideoIds.add(video.videoId));
-  });
-  console.log(`  📈 총 고유 영상: ${allVideoIds.size}개`);
-
-  // JSON 파일로 저장
-  const todayFile = path.join(DATA_DIR, `${result.date}.json`);
-  fs.writeFileSync(todayFile, JSON.stringify(result, null, 2));
-  console.log('');
-  console.log(`✅ 데이터 저장 완료: ${todayFile}`);
-
-  // latest.json도 업데이트
-  const latestFile = path.join(DATA_DIR, 'latest.json');
-  fs.writeFileSync(latestFile, JSON.stringify(result, null, 2));
-  console.log(`✅ 최신 데이터 업데이트: ${latestFile}`);
+  if (deletedCount > 0) {
+    console.log(`✅ ${deletedCount}개 오래된 파일 삭제 완료`);
+  } else {
+    console.log('✅ 삭제할 오래된 파일 없음');
+  }
 
   console.log('');
   console.log('🎉 수집 완료!');
